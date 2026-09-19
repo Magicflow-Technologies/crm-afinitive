@@ -10,6 +10,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { dispatchInboundToEve } from '@/lib/ai/eve-agent'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -878,6 +879,20 @@ async function processMessage(
       contactId: contactRecord.id,
       configOwnerUserId,
     })
+  }
+
+  // Dispatch inbound text message to external Eve AI orchestrator
+  // Only for text messages from customer when conversation is not paused by a human
+  const isPausedByHuman =
+    conversation.ai_autoreply_disabled === true || Boolean(conversation.assigned_agent_id)
+
+  if (contentType === 'text' && inboundText.trim() && !isPausedByHuman) {
+    const formattedFrom = senderPhone.startsWith('+') ? senderPhone : `+${senderPhone}`
+    await dispatchInboundToEve({
+      from: formattedFrom,
+      message: inboundText.trim(),
+      name: contactName || undefined,
+    }).catch((err) => console.error('[eve-agent] dispatch error:', err))
   }
 
   // message.received webhook (public API). Awaited — not fire-and-forget
