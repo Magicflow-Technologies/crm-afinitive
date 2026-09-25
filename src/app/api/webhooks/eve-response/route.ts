@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { engineSendText } from '@/lib/flows/meta-send'
+import { engineSendTemplate } from '@/lib/automations/meta-send'
 import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 
 interface EveCallbackPayload {
   to?: string
   reply?: string
+  template?: string
+  templateName?: string
+  language?: string
+  variables?: string[]
+  params?: string[]
   sessionId?: string
 }
 
@@ -21,9 +27,13 @@ export async function POST(request: Request) {
   try {
     const body: EveCallbackPayload | null = await request.json().catch(() => null)
 
-    if (!body || !body.to || typeof body.reply !== 'string' || !body.reply.trim()) {
+    const template = body?.template || body?.templateName
+    const hasReply = typeof body?.reply === 'string' && body.reply.trim().length > 0
+    const hasTemplate = typeof template === 'string' && template.trim().length > 0
+
+    if (!body || !body.to || (!hasReply && !hasTemplate)) {
       return NextResponse.json(
-        { error: 'Invalid payload: "to" (string) and non-empty "reply" (string) are required' },
+        { error: 'Invalid payload: "to" (string) and either "reply" (string) or "template" (string) are required' },
         { status: 400 }
       )
     }
@@ -149,19 +159,37 @@ export async function POST(request: Request) {
 
     const configOwnerUserId = config?.user_id || activeContact.user_id
 
-    // 4. Dispatch outbound text message via WhatsApp Meta API and persist to DB
-    const sendResult = await engineSendText({
-      accountId: activeContact.account_id,
-      userId: configOwnerUserId,
-      conversationId,
-      contactId: activeContact.id,
-      text: reply.trim(),
-      aiGenerated: true,
-    })
+    // 4. Dispatch outbound message (template or text) via WhatsApp Meta API and persist to DB
+    let whatsappMessageId = ''
+
+    if (hasTemplate && template) {
+      const templateParams = body.variables || body.params || []
+      const language = body.language || 'en_US'
+      const sendResult = await engineSendTemplate({
+        accountId: activeContact.account_id,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId: activeContact.id,
+        templateName: template.trim(),
+        language,
+        params: templateParams,
+      })
+      whatsappMessageId = sendResult.whatsapp_message_id
+    } else {
+      const sendResult = await engineSendText({
+        accountId: activeContact.account_id,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId: activeContact.id,
+        text: (reply || '').trim(),
+        aiGenerated: true,
+      })
+      whatsappMessageId = sendResult.whatsapp_message_id
+    }
 
     return NextResponse.json({
       success: true,
-      whatsapp_message_id: sendResult.whatsapp_message_id,
+      whatsapp_message_id: whatsappMessageId,
       conversation_id: conversationId,
       contact_id: activeContact.id,
     })
