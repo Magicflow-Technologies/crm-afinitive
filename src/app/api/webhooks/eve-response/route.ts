@@ -12,6 +12,10 @@ interface EveCallbackPayload {
   language?: string
   variables?: string[]
   params?: string[]
+  mediaUrl?: string
+  headerMediaUrl?: string
+  imageUrl?: string
+  mediaType?: 'image' | 'video' | 'document'
   sessionId?: string
 }
 
@@ -165,6 +169,18 @@ export async function POST(request: Request) {
     if (hasTemplate && template) {
       const templateParams = body.variables || body.params || []
       const language = body.language || 'en_US'
+      const rawMediaUrl = body.mediaUrl || body.headerMediaUrl || body.imageUrl
+      const headerMediaUrl =
+        typeof rawMediaUrl === 'string' && rawMediaUrl.trim().length > 0
+          ? rawMediaUrl.trim()
+          : undefined
+      const headerMediaType =
+        body.mediaType === 'image' ||
+        body.mediaType === 'video' ||
+        body.mediaType === 'document'
+          ? body.mediaType
+          : undefined
+
       const sendResult = await engineSendTemplate({
         accountId: activeContact.account_id,
         userId: configOwnerUserId,
@@ -173,6 +189,8 @@ export async function POST(request: Request) {
         templateName: template.trim(),
         language,
         params: templateParams,
+        ...(headerMediaUrl ? { headerMediaUrl } : {}),
+        ...(headerMediaType ? { headerMediaType } : {}),
       })
       whatsappMessageId = sendResult.whatsapp_message_id
     } else {

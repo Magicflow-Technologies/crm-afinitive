@@ -50,6 +50,8 @@ interface SendTemplateArgs {
   templateName: string
   language?: string
   params?: string[]
+  headerMediaUrl?: string
+  headerMediaType?: 'image' | 'video' | 'document'
 }
 
 export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
@@ -162,6 +164,24 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         ).row
       : null
 
+  const resolvedHeaderMediaUrl =
+    input.kind === 'template'
+      ? input.headerMediaUrl ||
+        (templateRow?.header_type && templateRow.header_type !== 'text'
+          ? (templateRow.header_media_url ?? undefined)
+          : undefined)
+      : undefined
+
+  const resolvedHeaderMediaType =
+    input.kind === 'template'
+      ? (input.headerMediaType ??
+        (templateRow?.header_type === 'image' ||
+        templateRow?.header_type === 'video' ||
+        templateRow?.header_type === 'document'
+          ? templateRow.header_type
+          : undefined))
+      : undefined
+
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
@@ -171,6 +191,15 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         templateName: input.templateName,
         language: input.language,
         params: input.params,
+        ...(resolvedHeaderMediaUrl
+          ? {
+              messageParams: {
+                body: input.params,
+                headerMediaUrl: resolvedHeaderMediaUrl,
+                headerMediaType: resolvedHeaderMediaType,
+              },
+            }
+          : {}),
       })
       return r.messageId
     }
@@ -226,6 +255,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     sender_type: 'bot',
     content_type,
     content_text,
+    ...(resolvedHeaderMediaUrl ? { media_url: resolvedHeaderMediaUrl } : {}),
     template_name,
     message_id: waMessageId,
     status: 'sent',

@@ -205,4 +205,99 @@ describe('POST /api/webhooks/eve-response', () => {
       params: [],
     })
   })
+
+  it('forwards mediaUrl and variables when sending a template with image header', async () => {
+    const mockDb = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'contacts') {
+          return {
+            select: vi.fn().mockReturnValue({
+              like: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 'contact-uuid-1',
+                    account_id: 'account-uuid-1',
+                    user_id: 'user-uuid-1',
+                    phone: '+51942900456',
+                    name: 'Ricardo',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }
+        }
+        if (table === 'conversations') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  order: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [
+                        {
+                          id: 'conv-uuid-1',
+                          ai_autoreply_disabled: false,
+                          assigned_agent_id: null,
+                        },
+                      ],
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }
+        }
+        if (table === 'whatsapp_config') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { user_id: 'user-uuid-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        }
+        return {}
+      }),
+    }
+
+    vi.spyOn(adminClient, 'supabaseAdmin').mockReturnValue(mockDb as never)
+    const automationsMetaSend = await import('@/lib/automations/meta-send')
+    vi.spyOn(automationsMetaSend, 'engineSendTemplate').mockResolvedValueOnce({
+      whatsapp_message_id: 'wamid.TEMPLATE_IMG_123',
+    })
+
+    const req = new Request('http://localhost/api/webhooks/eve-response', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: '+51942900456',
+        template: 'convocatoria_evento_universal',
+        language: 'en_US',
+        mediaUrl: 'https://links.afinitive.com.pe/img/imginvertirmanera.jpeg',
+        variables: ['Ricardo', 'Evento 2026'],
+      }),
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.success).toBe(true)
+    expect(json.whatsapp_message_id).toBe('wamid.TEMPLATE_IMG_123')
+
+    expect(automationsMetaSend.engineSendTemplate).toHaveBeenCalledWith({
+      accountId: 'account-uuid-1',
+      userId: 'user-uuid-1',
+      conversationId: 'conv-uuid-1',
+      contactId: 'contact-uuid-1',
+      templateName: 'convocatoria_evento_universal',
+      language: 'en_US',
+      params: ['Ricardo', 'Evento 2026'],
+      headerMediaUrl: 'https://links.afinitive.com.pe/img/imginvertirmanera.jpeg',
+    })
+  })
 })

@@ -362,6 +362,18 @@ export interface SendTemplateMessageArgs {
   contextMessageId?: string
 }
 
+function inferHeaderMediaType(url?: string): 'image' | 'video' | 'document' {
+  if (!url) return 'image'
+  try {
+    const pathname = new URL(url).pathname.toLowerCase()
+    if (/\.(mp4|3gp|mov|avi|webm)$/.test(pathname)) return 'video'
+    if (/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv)$/.test(pathname)) return 'document'
+  } catch {
+    // Non-URL string — default to image
+  }
+  return 'image'
+}
+
 /**
  * Send a pre-approved WhatsApp message template. Required outside
  * the 24-hour window and for any first-touch messaging.
@@ -407,14 +419,32 @@ export async function sendTemplateMessage(
     if (components.length > 0) {
       templatePayload.components = components
     }
-  } else if (params && params.length > 0) {
-    // Legacy body-only path — no template row available.
-    templatePayload.components = [
-      {
+  } else {
+    // No local template row available — build header (if media provided)
+    // and body components directly from caller-supplied params.
+    const components: Record<string, unknown>[] = []
+    if (messageParams?.headerMediaUrl || messageParams?.headerMediaId) {
+      const mediaType =
+        messageParams.headerMediaType ??
+        inferHeaderMediaType(messageParams.headerMediaUrl)
+      const mediaPayload = messageParams.headerMediaId
+        ? { id: messageParams.headerMediaId }
+        : { link: messageParams.headerMediaUrl }
+      components.push({
+        type: 'header',
+        parameters: [{ type: mediaType, [mediaType]: mediaPayload }],
+      })
+    }
+    const bodyValues = messageParams?.body ?? params
+    if (bodyValues && bodyValues.length > 0) {
+      components.push({
         type: 'body',
-        parameters: params.map((p) => ({ type: 'text', text: String(p) })),
-      },
-    ]
+        parameters: bodyValues.map((p) => ({ type: 'text', text: String(p) })),
+      })
+    }
+    if (components.length > 0) {
+      templatePayload.components = components
+    }
   }
 
   const body: Record<string, unknown> = {

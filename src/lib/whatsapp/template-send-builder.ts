@@ -43,6 +43,11 @@ export interface SendTimeParams {
   /** Alternative: send the media by Meta media id (from prior upload). */
   headerMediaId?: string;
   /**
+   * Explicit media type for the header when sending without a local template row
+   * (defaults to inferring from URL extension / `'image'`).
+   */
+  headerMediaType?: 'image' | 'video' | 'document';
+  /**
    * Per-button overrides keyed by the button's index in the
    * template's `buttons` array. Used for URL buttons with a {{1}}
    * suffix and for COPY_CODE buttons whose example you want to

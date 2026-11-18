@@ -3,6 +3,7 @@ import {
   INTERACTIVE_LIMITS,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTemplateMessage,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -263,6 +264,72 @@ describe("sendInteractiveList — validation", () => {
             },
           ],
         },
+      },
+    });
+  });
+});
+
+describe("sendTemplateMessage — without local template row", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("includes image header component before body when headerMediaUrl is provided", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.TPL_IMG" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const result = await sendTemplateMessage({
+      phoneNumberId: "test-phone",
+      accessToken: "test-token",
+      to: "51942900456",
+      templateName: "convocatoria_evento_universal",
+      language: "en_US",
+      params: ["Ricardo", "Miércoles"],
+      messageParams: {
+        body: ["Ricardo", "Miércoles"],
+        headerMediaUrl: "https://links.afinitive.com.pe/img/imginvertirmanera.jpeg",
+      },
+    });
+
+    expect(result).toEqual({ messageId: "wamid.TPL_IMG" });
+    expect(captured).not.toBeNull();
+    expect(captured!.body).toEqual({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: "51942900456",
+      type: "template",
+      template: {
+        name: "convocatoria_evento_universal",
+        language: { code: "en_US" },
+        components: [
+          {
+            type: "header",
+            parameters: [
+              {
+                type: "image",
+                image: {
+                  link: "https://links.afinitive.com.pe/img/imginvertirmanera.jpeg",
+                },
+              },
+            ],
+          },
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: "Ricardo" },
+              { type: "text", text: "Miércoles" },
+            ],
+          },
+        ],
       },
     });
   });
